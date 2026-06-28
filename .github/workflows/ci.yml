@@ -1,0 +1,62 @@
+name: CI
+
+env:
+  GOLANGCI_LINT_VERSION: v1.64.8
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-checks:
+    name: Go checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache local tools
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: ${{ runner.os }}-go-tools-${{ env.GOLANGCI_LINT_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run CI checks
+        run: make ci
+
+      - name: Package application
+        if: github.event_name != 'pull_request'
+        run: make package
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
+
+      - name: Upload build artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-amd64
+          path: bin/app-linux-amd64.tar.gz
+          if-no-files-found: error
