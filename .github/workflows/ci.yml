@@ -1,0 +1,239 @@
+name: CI/CD
+
+env:
+  GOLANGCI_LINT_VERSION: v1.64.8
+  COVERAGE_THRESHOLD: "30.0"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: check:dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download and verify modules
+        run: make deps-check
+
+      - name: Check go.mod and go.sum
+        run: make mod-check
+
+  format:
+    name: linter:format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check gofmt
+        run: make fmt-check
+
+  style:
+    name: linter:style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache local tools
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: ${{ runner.os }}-${{ runner.arch }}-tools-${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Check style rules
+        run: make lint-style
+
+  static-analysis:
+    name: linter:static-analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache local tools
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: ${{ runner.os }}-${{ runner.arch }}-tools-${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Run go vet
+        run: make vet
+
+      - name: Run static analysis linters
+        run: make lint-static
+
+  security:
+    name: security:go
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache local tools
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: ${{ runner.os }}-${{ runner.arch }}-tools-${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Run security linters
+        run: make lint-security
+
+  unit-tests:
+    name: go:unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run unit tests
+        run: make test
+
+  race-tests:
+    name: go:race-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests with race detector
+        run: make test-race
+
+  coverage:
+    name: tests:coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run coverage gate
+        run: make coverage-check
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
+
+  build:
+    name: build:binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build application
+        run: make build
+
+  package:
+    name: cd:package-artifact
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs:
+      - dependencies
+      - format
+      - style
+      - static-analysis
+      - security
+      - unit-tests
+      - race-tests
+      - coverage
+      - build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Package application
+        run: make package
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-amd64
+          path: bin/app-linux-amd64.tar.gz
+          if-no-files-found: error
