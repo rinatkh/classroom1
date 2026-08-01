@@ -7,6 +7,6 @@ import (
 )
 
 func main() {
-	message := greeter.BuildGreeting("Мария")
+	message := greeter.BuildGreeting("Никита")
 	fmt.Println(message)
 }
